@@ -70,14 +70,19 @@ layout {
 
     tab name="${PANEL_PROJECT_NAME}" focus=true {
         pane split_direction="vertical" size="94%" {
-            pane size="33%" {
+            pane size="30%" {
                 pane command="bash" size="65%" name="Branches" {
                     args "-c" "${SCRIPTS_DIR}/branches.sh"
                 }
                 pane size="35%" name="git"
             }
-            pane command="bash" size="27%" name="Agents" {
-                args "-c" "${SCRIPTS_DIR}/agents.sh"
+            pane size="32%" {
+                pane command="bash" size="55%" name="Agents" {
+                    args "-c" "${SCRIPTS_DIR}/agents.sh"
+                }
+                pane command="bash" size="45%" name="Usage" {
+                    args "-c" "${SCRIPTS_DIR}/usage.sh"
+                }
             }
             pane size="40%" name="Terminal"
         }
