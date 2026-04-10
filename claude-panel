@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ────────────────────────────────────────────────
+# claude-panel — AI development dashboard
+# Launch from any git project directory
+# ────────────────────────────────────────────────
+
+# Resolve script location (follows symlinks)
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_PATH" ]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+done
+PANEL_HOME="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+SCRIPTS_DIR="$PANEL_HOME/scripts"
+
+# Check dependencies
+if ! command -v zellij &>/dev/null; then
+    echo "Error: zellij is required. Install with: brew install zellij"
+    exit 1
+fi
+
+# Detect project
+if git rev-parse --is-inside-work-tree &>/dev/null; then
+    export PANEL_PROJECT_DIR="$(git rev-parse --show-toplevel)"
+    export PANEL_PROJECT_NAME="$(basename "$PANEL_PROJECT_DIR")"
+else
+    export PANEL_PROJECT_DIR="$(pwd)"
+    export PANEL_PROJECT_NAME="$(basename "$PANEL_PROJECT_DIR")"
+fi
+
+SESSION_NAME="panel-${PANEL_PROJECT_NAME}"
+
+# ── Helpers ──
+
+# Strip ANSI codes from zellij output
+strip_ansi() {
+    sed $'s/\033\[[0-9;]*m//g'
+}
+
+# Get session status: "active", "exited", or ""
+session_status() {
+    local info
+    info=$(zellij list-sessions 2>&1 | strip_ansi | grep "^${SESSION_NAME} " || true)
+    if [ -z "$info" ]; then
+        echo ""
+    elif echo "$info" | grep -qi "EXITED"; then
+        echo "exited"
+    else
+        echo "active"
+    fi
+}
+
+# Kill session silently
+kill_session() {
+    zellij kill-session "$SESSION_NAME" &>/dev/null || true
+    zellij delete-session "$SESSION_NAME" &>/dev/null || true
+}
+
+# Generate the layout KDL into a temp file
+generate_layout() {
+    local f
+    f=$(mktemp /tmp/claude-panel-XXXXXX.kdl)
+
+    cat > "$f" <<LAYOUT
+layout {
+    cwd "${PANEL_PROJECT_DIR}"
+
+    tab name="${PANEL_PROJECT_NAME}" focus=true {
+        pane split_direction="vertical" size="94%" {
+            pane size="33%" {
+                pane command="bash" size="65%" name="Branches" {
+                    args "-c" "${SCRIPTS_DIR}/branches.sh"
+                }
+                pane size="35%" name="git"
+            }
+            pane command="bash" size="27%" name="Agents" {
+                args "-c" "${SCRIPTS_DIR}/agents.sh"
+            }
+            pane size="40%" name="Terminal"
+        }
+        pane command="bash" size="6%" borderless=true name="Hints" {
+            args "-c" "${SCRIPTS_DIR}/hints.sh"
+        }
+    }
+}
+LAYOUT
+    echo "$f"
+}
+
+# ── CLI commands ──
+
+# Help
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    cat <<EOF
+claude-panel — AI development dashboard
+
+Usage: claude-panel [options]
+
+Options:
+  (none)         Launch panel (or relaunch if dead)
+  -k, --kill     Kill panel session for this project
+  -K, --kill-all Kill ALL panel sessions
+  -l, --list     List panel sessions
+  -h, --help     Show this help
+
+Session: $SESSION_NAME
+
+Inside the panel:
+  Ctrl+Q         Quit (kills session)
+  Ctrl+O, d      Detach (keeps session alive)
+  Ctrl+O, w      Session manager
+  Ctrl+O, n      New pane
+  Alt+←/→        Switch panes
+EOF
+    exit 0
+fi
+
+# Kill this project's session
+if [ "${1:-}" = "--kill" ] || [ "${1:-}" = "-k" ]; then
+    kill_session
+    echo "Killed: $SESSION_NAME"
+    exit 0
+fi
+
+# Kill all panel sessions
+if [ "${1:-}" = "--kill-all" ] || [ "${1:-}" = "-K" ]; then
+    zellij list-sessions 2>&1 | strip_ansi | grep "^panel-" | awk '{print $1}' | while read -r s; do
+        zellij kill-session "$s" &>/dev/null || true
+        zellij delete-session "$s" &>/dev/null || true
+        echo "Killed: $s"
+    done
+    echo "Done"
+    exit 0
+fi
+
+# List sessions
+if [ "${1:-}" = "--list" ] || [ "${1:-}" = "-l" ]; then
+    echo "Panel sessions:"
+    zellij list-sessions 2>&1 | grep "panel-" || echo "  (none)"
+    exit 0
+fi
+
+# Check if already inside a Zellij session
+if [ -n "${ZELLIJ:-}" ]; then
+    echo "Already inside a Zellij session."
+    echo "Detach first (Ctrl+O, d) then run claude-panel."
+    exit 1
+fi
+
+# ── Launch ──
+
+status=$(session_status)
+
+case "$status" in
+    active)
+        # Session alive — just attach
+        echo "Attaching to: $SESSION_NAME"
+        zellij attach "$SESSION_NAME"
+        ;;
+    exited)
+        # Dead session — scripts won't work, kill and start fresh
+        echo "Cleaning dead session: $SESSION_NAME"
+        kill_session
+        LAYOUT_FILE=$(generate_layout)
+        trap "rm -f '$LAYOUT_FILE'" EXIT
+        zellij -s "$SESSION_NAME" --new-session-with-layout "$LAYOUT_FILE"
+        ;;
+    *)
+        # No session — create new
+        LAYOUT_FILE=$(generate_layout)
+        trap "rm -f '$LAYOUT_FILE'" EXIT
+        zellij -s "$SESSION_NAME" --new-session-with-layout "$LAYOUT_FILE"
+        ;;
+esac
