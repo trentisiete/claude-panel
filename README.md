@@ -1,15 +1,16 @@
 # claude-panel
 
-Terminal dashboard for AI coding projects. See your git branches, Claude agents, and work in one screen.
+Terminal dashboard for AI coding projects. See your git branches, Claude agents, token usage, and work in one screen.
 
 Built with Zellij.
 
 ```
 ┌────────────┬──────────┬────────────┐
-│ Branches   │          │            │
-│ (auto)     │ Agents   │  Terminal  │
-├────────────┤ (auto)   │            │
-│ git shell  │          │            │
+│ Branches   │ Agents   │            │
+│ (auto)     │ (auto)   │  Terminal  │
+├────────────┼──────────┤            │
+│ git shell  │ Usage    │            │
+│            │ (auto)   │            │
 ├────────────┴──────────┴────────────┤
 │ shortcuts & paths                  │
 └────────────────────────────────────┘
@@ -18,7 +19,8 @@ Built with Zellij.
 ## What you see
 
 - **Branches** — all local branches, commits ahead/behind main, last 3 commits per branch, working tree status
-- **Agents** — active Claude Code sessions, PID, uptime, memory, context size
+- **Agents** — worktrees with session counts, active Claude agents with model, branch, PID, uptime, memory, context size, current task
+- **Usage** — token consumption (1h / today / week / all-time), hours remaining, output rate, model breakdown, daily bar chart
 - **git shell** — interactive terminal in your project dir, run git commands
 - **Terminal** — general purpose shell
 - **Hints bar** — keyboard shortcuts + Claude project/memory paths
@@ -87,7 +89,7 @@ claude-panel --list       # see active panels
 
 `claude-panel` generates a Zellij layout on the fly, exports your project path as env vars, and launches a named Zellij session. The monitoring panes use the alternate screen buffer so they don't flood your scrollback.
 
-Agent tracking reads from `~/.claude/sessions/` — no API calls, no external services.
+Agent tracking reads from `~/.claude/sessions/` and `~/.claude/projects/` — no API calls, no external services. Token usage is parsed from JSONL conversation logs.
 
 ## License
 
